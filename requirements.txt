@@ -1,6 +1,6 @@
 spacy
 pdfplumber
-docx
+python-docx
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
