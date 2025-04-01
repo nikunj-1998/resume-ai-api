@@ -8,3 +8,4 @@ faiss-cpu
 numpy
 scikit-learn
 uvicorn
+fastapi
