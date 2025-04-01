@@ -1,10 +1,9 @@
-spacy
-pdfplumber
-python-docx
+google-api-python-client
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
-google-api-python-client
-fastapi
-uvicorn
+pdfplumber
+python-docx
 faiss-cpu
+numpy
+scikit-learn

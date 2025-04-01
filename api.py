@@ -4,13 +4,13 @@ import io
 from googleapiclient.http import MediaIoBaseDownload
 import pdfplumber
 import docx
-import spacy
 import re
 import faiss
 import numpy as np
 import json
 import base64
 import os
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 # 🔹 Load credentials from Render environment variable
 SERVICE_ACCOUNT_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_BASE64")
@@ -26,9 +26,6 @@ drive_service = build("drive", "v3", credentials=creds)
 
 # 🔹 Define the folder ID containing resumes
 FOLDER_ID = "1oTBOho6yIrxqdk5RCe6QPuEhxhEOYNJ2"  # Replace with actual folder ID
-
-# 🔹 Load spaCy model for PII removal
-nlp = spacy.load("en_core_web_sm")
 
 def get_all_files(folder_id):
     """Recursively fetches all PDF and DOCX files from Google Drive folder & subfolders."""
@@ -67,25 +64,22 @@ def extract_text(file_id, mime_type):
     return ""
 
 def remove_pii(text):
-    """Removes PII (names, emails, phone numbers, companies) from extracted text."""
+    """Removes PII (names, emails, phone numbers, companies) using regex."""
     # Remove emails
     text = re.sub(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", "[EMAIL]", text)
 
     # Remove phone numbers (basic patterns)
     text = re.sub(r"\b\d{10,12}\b", "[PHONE]", text)
 
-    # Remove names using spaCy
-    doc = nlp(text)
-    cleaned_text = []
-    for token in doc:
-        if token.ent_type_ == "PERSON":
-            cleaned_text.append("[NAME]")
-        elif token.ent_type_ in ["ORG", "COMPANY"]:
-            cleaned_text.append("[COMPANY]")
-        else:
-            cleaned_text.append(token.text)
-    
-    return " ".join(cleaned_text)
+    # Remove company names (simple heuristic: words ending in 'Inc.', 'Corp.', 'Ltd.')
+    text = re.sub(r"\b\w+\s+(Inc\.|Corp\.|Ltd\.)\b", "[COMPANY]", text)
+
+    # Remove common first and last names (using a simple dictionary approach)
+    common_names = ["John", "Jane", "Michael", "Sarah", "David", "Emily"]  # Extend as needed
+    for name in common_names:
+        text = re.sub(rf"\b{name}\b", "[NAME]", text, flags=re.IGNORECASE)
+
+    return text
 
 # 🔹 Extract all text first
 all_files = get_all_files(FOLDER_ID)
@@ -98,11 +92,13 @@ print("✅ Extracted all resume text!")
 sanitized_text = remove_pii(full_text)
 print("✅ Removed PII from text!")
 
-# 🔹 Tokenize and load into FAISS
-nlp_vectors = nlp(sanitized_text).vector
-faiss_index = faiss.IndexFlatL2(nlp_vectors.shape[0])  # L2 distance index
-faiss_index.add(np.array([nlp_vectors]))  
-print("✅ Text indexed in FAISS!")
+# 🔹 Tokenize and load into FAISS using TF-IDF
+vectorizer = TfidfVectorizer()
+vectors = vectorizer.fit_transform([sanitized_text]).toarray()
+
+faiss_index = faiss.IndexFlatL2(vectors.shape[1])  # L2 distance index
+faiss_index.add(vectors.astype(np.float32))  
+print("✅ Text indexed in FAISS using TF-IDF!")
 
 # 🔹 Save cleaned text (optional)
 with open("cleaned_resumes.txt", "w", encoding="utf-8") as f:
